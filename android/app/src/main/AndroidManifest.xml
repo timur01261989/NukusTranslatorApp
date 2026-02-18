@@ -1,6 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.nukustranslator"> <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -28,9 +28,7 @@
             </intent-filter>
         </activity>
 
-        <activity 
-            android:name=".ProjectionPermissionActivity"
-            android:exported="false" />
+        <activity android:name=".ProjectionPermissionActivity" />
 
         <service
             android:name="com.nukustranslator.MainForegroundService"

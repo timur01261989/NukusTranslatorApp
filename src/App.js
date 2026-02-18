@@ -1,141 +1,276 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { SafeAreaView, View, Text, TextInput, StyleSheet, NativeModules, NativeEventEmitter, Platform } from "react-native";
-import FloatingButton from "./components/FloatingButton";
-import { translateViaBackend } from "./api/GeminiClient";
-import { CacheManager } from "./logic/CacheManager";
-import { signatureFromBlocks } from "./logic/TranslationOptimizer";
+import React, {useEffect, useMemo, useState} from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  NativeEventEmitter,
+  NativeModules,
+  Modal,
+  FlatList,
+  Pressable,
+} from "react-native";
 
-const { BridgeModule } = NativeModules;
+import {getApiKey} from "./api/GeminiClient";
+import {translateSmart, LANGUAGE_CODE_MAP} from "./api/GeminiClient";
 
-const emitter = BridgeModule ? new NativeEventEmitter(BridgeModule) : null;
+const {BridgeModule} = NativeModules;
+
+const LANGUAGES = [
+  {label: "English", value: "English"},
+  {label: "O‘zbek", value: "Uzbek"},
+  {label: "Qoraqalpoq", value: "Karakalpak"},
+  {label: "Русский", value: "Russian"},
+  {label: "Deutsch", value: "German"},
+  {label: "中文", value: "Chinese"},
+];
+
+function LanguagePicker({label, value, onChange}) {
+  const [open, setOpen] = useState(false);
+
+  const currentLabel = useMemo(() => {
+    const found = LANGUAGES.find(l => l.value === value);
+    return found ? found.label : value;
+  }, [value]);
+
+  return (
+    <View style={styles.pickerRow}>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity style={styles.pickerButton} onPress={() => setOpen(true)}>
+        <Text style={styles.pickerButtonText}>{currentLabel}</Text>
+      </TouchableOpacity>
+
+      <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setOpen(false)} />
+        <View style={styles.modalSheet}>
+          <Text style={styles.modalTitle}>{label}</Text>
+          <FlatList
+            data={LANGUAGES}
+            keyExtractor={item => item.value}
+            renderItem={({item}) => (
+              <TouchableOpacity
+                style={[styles.modalItem, item.value === value && styles.modalItemActive]}
+                onPress={() => {
+                  onChange(item.value);
+                  setOpen(false);
+                }}
+              >
+                <Text style={styles.modalItemText}>{item.label}</Text>
+                <Text style={styles.modalItemSub}>{LANGUAGE_CODE_MAP[item.value] || ""}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </Modal>
+    </View>
+  );
+}
 
 export default function App() {
-  const cache = useMemo(() => new CacheManager(800), []);
-  const [apiKey, setApiKey] = useState(""); // deprecated (local mode)
-  const [backendUrl, setBackendUrl] = useState("http://10.0.2.2:8080");
-  const [accessToken, setAccessToken] = useState("nst_101a64d507fb287ac5eb39d0e7305c29");
-
+  const [backendUrl, setBackendUrl] = useState(""); // optional
+  const [accessToken, setAccessToken] = useState(""); // optional
+  const [apiKey, setApiKey] = useState("");
   const [sourceLang, setSourceLang] = useState("English");
   const [targetLang, setTargetLang] = useState("Uzbek");
   const [running, setRunning] = useState(false);
-  const [status, setStatus] = useState("Idle");
+
+  const [isBusy, setIsBusy] = useState(false);
+  const [lastText, setLastText] = useState("");
 
   useEffect(() => {
-    async function loadKey() {
+    // Optional backend key fetcher (keeps your old flow)
+    getApiKey(backendUrl, accessToken)
+      .then(k => setApiKey(k || ""))
+      .catch(() => setApiKey(""));
+  }, [backendUrl, accessToken]);
+
+  useEffect(() => {
+    // Listen OCR blocks from native and translate -> overlay
+    const emitter = new NativeEventEmitter(BridgeModule);
+    const sub = emitter.addListener("OcrBlocks", async payload => {
       try {
-        if (BridgeModule?.getApiKey) {
-          const k = await BridgeModule.getApiKey();
-          if (k) setApiKey(k);
-        }
-      } catch {}
-    }
-    loadKey();
-  }, []);
+        const blocks = payload?.blocks || [];
+        const combined = blocks
+          .map(b => (b?.text || "").trim())
+          .filter(Boolean)
+          .join("\n")
+          .trim();
 
-  useEffect(() => {
-    if (!apiKey) return;
-    BridgeModule?.saveApiKey?.(apiKey).catch(()=>{});
-  }, [apiKey]);
+        if (!combined) return;
 
-  const [lastSig, setLastSig] = useState("");
+        // Don’t spam the translator for identical frames
+        if (combined === lastText) return;
+        setLastText(combined);
 
-  useEffect(() => {
-    if (!emitter) return;
-    const sub = emitter.addListener("OCR_BLOCKS", async (payload) => {
-      try {
-        const blocks = payload?.blocks ?? [];
-        const sig = signatureFromBlocks(blocks);
-        if (sig && sig === lastSig) return;
-        setLastSig(sig);
+        setIsBusy(true);
 
-        
-        // Translate each unique text
-        const uniqueTexts = Array.from(new Set(blocks.map(b => b.text).filter(Boolean)));
-        const translations = {};
+        const translated = await translateSmart({
+          text: combined,
+          sourceLang,
+          targetLang,
+          backendUrl,
+          accessToken,
+        });
 
-        for (const t of uniqueTexts) {
-          const cached = cache.get(`${sourceLang}->${targetLang}:${t}`);
-          if (cached) {
-            translations[t] = cached;
-            continue;
-          }
-          setStatus(`Translating: ${t.slice(0, 24)}...`);
-          const tr = await translateViaBackend({ backendUrl, accessToken, sourceLang, targetLang, text: t });
-          cache.set(`${sourceLang}->${targetLang}:${t}`, tr);
-          translations[t] = tr;
-        }
-
-        // Send back blocks with translated text
-        const outBlocks = blocks.map(b => ({
-          ...b,
-          translated: translations[b.text] ?? ""
-        }));
-
-        BridgeModule.updateOverlay(outBlocks);
-        setStatus(`Overlay updated (${outBlocks.length})`);
+        await BridgeModule.updateOverlay(translated || "");
       } catch (e) {
-        setStatus(`Error: ${String(e.message || e)}`);
+        console.warn("OCR/translate/updateOverlay failed:", e?.message || e);
+      } finally {
+        setIsBusy(false);
       }
     });
 
     return () => sub.remove();
-  }, [apiKey, sourceLang, targetLang, cache, lastSig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceLang, targetLang, backendUrl, accessToken, lastText]);
 
-  const toggle = async () => {
-    if (!BridgeModule) {
-      setStatus("BridgeModule not available (Android only).");
-      return;
-    }
+  const start = async () => {
     try {
-      if (!running) {
-        if (Platform.OS === "android") {
-          const ok = await BridgeModule.ensureOverlayPermission();
-          if (!ok) {
-            setStatus("Overlay permission required");
-            return;
-          }
-        }
-        await BridgeModule.configure("", sourceLang, targetLang);
-        await BridgeModule.start();
-        setRunning(true);
-        setStatus("Running");
-      } else {
-        await BridgeModule.stop();
-        setRunning(false);
-        setStatus("Stopped");
+      const ok = await BridgeModule.ensureOverlayPermission();
+      if (!ok) {
+        Alert.alert("Permission", "Overlay permission is required.");
+        return;
       }
+
+      // Configure native (apiKey can be empty; JS translator works anyway)
+      await BridgeModule.configure(apiKey || "", sourceLang, targetLang);
+
+      await BridgeModule.start();
+      setRunning(true);
+      Alert.alert("Started", "Screen Translation Started!");
     } catch (e) {
-      setStatus(`Error: ${String(e.message || e)}`);
+      Alert.alert("Error", e?.message || "Start failed");
+    }
+  };
+
+  const stop = async () => {
+    try {
+      await BridgeModule.stop();
+      setRunning(false);
+      await BridgeModule.updateOverlay("");
+    } catch (e) {
+      Alert.alert("Error", e?.message || "Stop failed");
     }
   };
 
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.card}>
-        <Text style={styles.h1}>Live Screen Translator</Text>
-        <Text style={styles.label}>Backend URL</Text>
-        <TextInput value={backendUrl} onChangeText={setBackendUrl} style={styles.input} placeholder="https://your-backend" />
+    <View style={styles.container}>
+      <Text style={styles.title}>NukusTranslator</Text>
 
-        <Text style={styles.label}>Access Token</Text>
-        <TextInput value={accessToken} onChangeText={setAccessToken} secureTextEntry style={styles.input} placeholder="nst_..." />
+      <Text style={styles.hint}>
+        Til tanlang. Backend sozlamasangiz ham ishlaydi (MyMemory orqali).
+      </Text>
 
-        <Text style={styles.label}>Source language</Text>
-        <TextInput value={sourceLang} onChangeText={setSourceLang} style={styles.input} />
-        <Text style={styles.label}>Target language</Text>
-        <TextInput value={targetLang} onChangeText={setTargetLang} style={styles.input} />
-        <Text style={styles.status}>{status}</Text>
+      <LanguagePicker label="Source language" value={sourceLang} onChange={setSourceLang} />
+      <LanguagePicker label="Target language" value={targetLang} onChange={setTargetLang} />
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Optional backend (agar bo‘lsa)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Backend URL (optional)"
+          value={backendUrl}
+          onChangeText={setBackendUrl}
+          autoCapitalize="none"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Access Token (optional)"
+          value={accessToken}
+          onChangeText={setAccessToken}
+          autoCapitalize="none"
+          secureTextEntry
+        />
       </View>
 
-      <FloatingButton running={running} onToggle={toggle} />
-    </SafeAreaView>
+      <TouchableOpacity
+        style={[styles.button, running ? styles.buttonStop : styles.buttonStart]}
+        onPress={running ? stop : start}
+        disabled={isBusy}
+      >
+        <Text style={styles.buttonText}>{running ? "STOP" : "START"}</Text>
+      </TouchableOpacity>
+
+      {isBusy ? (
+        <View style={styles.busyRow}>
+          <ActivityIndicator />
+          <Text style={styles.busyText}>Translating…</Text>
+        </View>
+      ) : null}
+
+      <Text style={styles.small}>
+        Eslatma: Qoraqalpoq tili hamma tarjimonlarda yo‘q. Agar xato bo‘lsa, tizim avtomatik O‘zbekka fallback qiladi.
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, padding: 16, backgroundColor: "#0b0f14" },
-  card: { backgroundColor: "#121826", borderRadius: 16, padding: 16 },
-  h1: { fontSize: 22, fontWeight: "800", color: "white", marginBottom: 12 },
-  label: { color: "#b0bec5", marginTop: 10, marginBottom: 6 },
-  input: { backgroundColor: "#1f2a3a", borderRadius: 10, padding: 12, color: "white" },
-  status: { color: "#cfd8dc", marginTop: 14 }
+  container: {flex: 1, padding: 20, backgroundColor: "#0b1020"},
+  title: {fontSize: 28, fontWeight: "700", color: "white", marginBottom: 8},
+  hint: {color: "#b8c0ff", marginBottom: 16, lineHeight: 18},
+
+  pickerRow: {marginBottom: 12},
+  label: {color: "#cbd5ff", marginBottom: 6, fontWeight: "600"},
+  pickerButton: {
+    borderWidth: 1,
+    borderColor: "#2a3568",
+    backgroundColor: "#121a35",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  pickerButtonText: {color: "white", fontSize: 16},
+
+  section: {marginTop: 10, marginBottom: 14},
+  sectionTitle: {color: "#cbd5ff", marginBottom: 8, fontWeight: "600"},
+  input: {
+    borderWidth: 1,
+    borderColor: "#2a3568",
+    backgroundColor: "#121a35",
+    color: "white",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+
+  button: {padding: 14, borderRadius: 14, alignItems: "center"},
+  buttonStart: {backgroundColor: "#2563eb"},
+  buttonStop: {backgroundColor: "#ef4444"},
+  buttonText: {color: "white", fontWeight: "700", fontSize: 16},
+
+  busyRow: {flexDirection: "row", alignItems: "center", marginTop: 12, gap: 10},
+  busyText: {color: "#cbd5ff"},
+
+  small: {color: "#93a1ff", marginTop: 14, fontSize: 12, lineHeight: 16},
+
+  modalBackdrop: {flex: 1, backgroundColor: "rgba(0,0,0,0.55)"},
+  modalSheet: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    top: 90,
+    bottom: 90,
+    backgroundColor: "#0f1733",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#2a3568",
+    overflow: "hidden",
+  },
+  modalTitle: {color: "white", fontWeight: "800", fontSize: 16, padding: 14},
+  modalItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#1f2a5a",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalItemActive: {backgroundColor: "#121f4a"},
+  modalItemText: {color: "white", fontSize: 16, fontWeight: "600"},
+  modalItemSub: {color: "#93a1ff"},
 });

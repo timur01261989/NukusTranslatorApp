@@ -1,11 +1,39 @@
 package com.nukustranslator
 
 import android.app.Application
-import android.content.Context
+import com.facebook.react.PackageList
+import com.facebook.react.ReactApplication
+import com.facebook.react.ReactNativeHost
+import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
+import com.facebook.react.defaults.DefaultReactNativeHost
+import com.facebook.soloader.SoLoader
 
-class MainApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        // Ilova ishga tushganda kerakli sozlamalar shu yerda bo'ladi
+class MainApplication : Application(), ReactApplication {
+
+  private val mReactNativeHost: ReactNativeHost =
+    object : DefaultReactNativeHost(this) {
+      override fun getPackages() =
+        PackageList(this).packages.apply {
+          // Packages that cannot be autolinked yet can be added manually here
+          add(BridgePackage())
+        }
+
+      override fun getJSMainModuleName(): String = "index"
+
+      override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
+
+      override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
+      override val isHermesEnabled: Boolean = BuildConfig.IS_HERMES_ENABLED
     }
+
+  override val reactNativeHost: ReactNativeHost
+    get() = mReactNativeHost
+
+  override fun onCreate() {
+    super.onCreate()
+    SoLoader.init(this, false)
+    if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
+      DefaultNewArchitectureEntryPoint.load()
+    }
+  }
 }

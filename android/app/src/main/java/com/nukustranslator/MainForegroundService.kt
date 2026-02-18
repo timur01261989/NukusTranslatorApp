@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import android.content.pm.ServiceInfo
 
 class MainForegroundService : Service() {
 
@@ -29,28 +28,20 @@ class MainForegroundService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
-      ACTION_START -> {
-        // 1. DARXOL BILDIRISHNOMANI YOQISH (Crash oldini oladi)
-        val notification = buildNotification("Translating… Tap to open app")
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-          startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-          startForeground(NOTIF_ID, notification)
-        }
-        
-        startWork()
-      }
+      ACTION_START -> startWork()
       ACTION_STOP -> stopWork()
+      else -> { /* ignore */ }
     }
     return START_STICKY
   }
 
   private fun startWork() {
     Log.d(TAG, "startWork")
+    startForeground(NOTIF_ID, buildNotification("Translating… Tap to open app"))
     OverlayService.ensureRunning(this)
 
-    // Ekranni ruxsatini so'rash
+    // IMPORTANT: MediaProjection requires user consent via an Activity.
+    // We launch a tiny activity to request it.
     val i = Intent(this, ProjectionPermissionActivity::class.java)
     i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     startActivity(i)
@@ -59,7 +50,9 @@ class MainForegroundService : Service() {
   fun onProjectionReady(resultCode: Int, data: Intent) {
     captureManager?.stop()
     captureManager = ScreenCaptureManager(this, resultCode, data) { bitmap ->
+      // OCR on each frame (throttle inside manager)
       TextRecognitionModule.recognize(bitmap) { blocks ->
+        // Send blocks to RN
         OcrEventBus.emit(this, blocks)
       }
     }
@@ -100,7 +93,6 @@ class MainForegroundService : Service() {
       .setSmallIcon(android.R.drawable.ic_menu_view)
       .setContentIntent(pending)
       .setOngoing(true)
-      .setPriority(NotificationCompat.PRIORITY_LOW) // Android 13+ uchun muhim
       .build()
   }
 
