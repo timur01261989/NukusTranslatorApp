@@ -1,3 +1,4 @@
+[![Build Android Debug APK](https://github.com/timur01261989/NukusTranslatorApp/actions/workflows/android-apk.yml/badge.svg)](https://github.com/timur01261989/NukusTranslatorApp/actions/workflows/android-apk.yml)
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 # Getting Started
