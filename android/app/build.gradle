@@ -49,10 +49,9 @@ android {
 }
 
 dependencies {
-    // 1. React Native asosiy kutubxonasi
+    // React Native
     implementation("com.facebook.react:react-android")
 
-    // 2. Hermes yoki JSC dvigateli
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
@@ -60,16 +59,18 @@ dependencies {
     }
 
     // ==========================================================
-    // ⚠️ YETISHMAYOTGAN KUTUBXONALAR (QO'SHILDI)
+    // ⚠️ YANGILANGAN KUTUBXONALAR (MUAMMONI YECHADI)
     // ==========================================================
 
-    // 3. Xavfsizlik va Shifrlash (SecurePrefs.kt ishlashi uchun)
-    implementation "androidx.security:security-crypto:1.0.0"
+    // 1. Security (MasterKey xatosini yo'qotadi)
+    // Diqqat: 1.1.0-alpha06 versiyasi kerak!
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
 
-    // 4. Matnni aniqlash - ML Kit (TextRecognitionModule.kt ishlashi uchun)
-    implementation "com.google.android.gms:play-services-mlkit-text-recognition:19.0.0"
+    // 2. ML Kit Text Recognition (Bundled versiyasi - google xatosini yo'qotadi)
+    implementation "com.google.mlkit:text-recognition:16.0.1"
 
-    // 5. Asosiy Android kutubxonalari (xatolarni oldini olish uchun)
+    // 3. Yordamchi kutubxonalar
     implementation "androidx.core:core-ktx:1.12.0"
     implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3"
 }
