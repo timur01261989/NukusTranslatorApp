@@ -71,9 +71,10 @@ object OverlayRenderer {
 
       val tv = TextView(root.context)
       tv.text = translated
-      tv.setTextColor(Color.WHITE)
-      tv.setBackgroundColor(0x99000000.toInt())
-      tv.textSize = 14f
+      val ctx = root.context
+      tv.setTextColor(OverlayPrefs.getTextColor(ctx))
+      tv.setBackgroundColor(OverlayPrefs.getBgColorWithAlpha(ctx))
+      tv.textSize = OverlayPrefs.getTextSizeSp(ctx)
       tv.setPadding(6, 4, 6, 4)
 
       val lp = FrameLayout.LayoutParams(

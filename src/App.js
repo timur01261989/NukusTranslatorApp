@@ -16,6 +16,7 @@ import {
 
 import {getApiKey} from "./api/GeminiClient";
 import {translateSmart, LANGUAGE_CODE_MAP} from "./api/GeminiClient";
+import FloatingButton from "./components/FloatingButton";
 
 const {BridgeModule} = NativeModules;
 
@@ -27,6 +28,21 @@ const LANGUAGES = [
   {label: "Deutsch", value: "German"},
   {label: "中文", value: "Chinese"},
 ];
+
+const DEFAULT_OVERLAY_STYLE = {
+  textSizeSp: 14,
+  textColorHex: "#FFFFFF",
+  bgColorHex: "#000000",
+  bgAlpha: 153,
+};
+
+function clampInt(v, a, b) {
+  const n = parseInt(String(v), 10);
+  if (Number.isNaN(n)) return a;
+  return Math.max(a, Math.min(b, n));
+}
+
+
 
 function LanguagePicker({label, value, onChange}) {
   const [open, setOpen] = useState(false);
@@ -70,6 +86,32 @@ function LanguagePicker({label, value, onChange}) {
 }
 
 export default function App() {
+const [showOverlaySettings, setShowOverlaySettings] = useState(false);
+const [overlayStyle, setOverlayStyle] = useState(DEFAULT_OVERLAY_STYLE);
+
+async function loadOverlayStyle() {
+  try {
+    const s = await BridgeModule.getOverlayStyle();
+    if (s) setOverlayStyle({ ...DEFAULT_OVERLAY_STYLE, ...s });
+  } catch (_) {}
+}
+
+async function saveOverlayStyle(next) {
+  try {
+    const n = { ...overlayStyle, ...next };
+    setOverlayStyle(n);
+    await BridgeModule.setOverlayStyle(
+      Number(n.textSizeSp),
+      String(n.textColorHex || "#FFFFFF"),
+      String(n.bgColorHex || "#000000"),
+      clampInt(n.bgAlpha, 0, 255)
+    );
+  } catch (e) {
+    Alert.alert("Overlay style error", e?.message || String(e));
+  }
+}
+
+
   const [backendUrl, setBackendUrl] = useState(""); // optional
   const [accessToken, setAccessToken] = useState(""); // optional
   const [apiKey, setApiKey] = useState("");
@@ -81,6 +123,7 @@ export default function App() {
   const [lastText, setLastText] = useState("");
 
   useEffect(() => {
+    loadOverlayStyle();
     // Optional backend key fetcher (keeps your old flow)
     getApiKey(backendUrl, accessToken)
       .then(k => setApiKey(k || ""))
@@ -273,4 +316,65 @@ const styles = StyleSheet.create({
   modalItemActive: {backgroundColor: "#121f4a"},
   modalItemText: {color: "white", fontSize: 16, fontWeight: "600"},
   modalItemSub: {color: "#93a1ff"},
-});
+}
+
+{/* Draggable in-app floating button */}
+<FloatingButton
+  label="⚙️"
+  onPress={() => setShowOverlaySettings(true)}
+/>
+
+<Modal visible={showOverlaySettings} transparent animationType="slide" onRequestClose={() => setShowOverlaySettings(false)}>
+  <View style={{flex:1, backgroundColor:"rgba(0,0,0,0.4)", justifyContent:"flex-end"}}>
+    <View style={{backgroundColor:"#fff", padding:16, borderTopLeftRadius:16, borderTopRightRadius:16}}>
+      <Text style={{fontSize:18, fontWeight:"700"}}>Overlay sozlamalari</Text>
+
+      <Text style={{marginTop:12}}>Matn o'lchami (sp)</Text>
+      <TextInput
+        value={String(overlayStyle.textSizeSp)}
+        onChangeText={(v)=>saveOverlayStyle({textSizeSp: clampInt(v, 10, 40)})}
+        keyboardType="numeric"
+        style={{borderWidth:1, borderColor:"#ddd", borderRadius:10, padding:10, marginTop:6}}
+      />
+
+      <Text style={{marginTop:12}}>Matn rangi (HEX)</Text>
+      <TextInput
+        value={String(overlayStyle.textColorHex)}
+        onChangeText={(v)=>saveOverlayStyle({textColorHex: v})}
+        autoCapitalize="none"
+        style={{borderWidth:1, borderColor:"#ddd", borderRadius:10, padding:10, marginTop:6}}
+      />
+
+      <Text style={{marginTop:12}}>Fon rangi (HEX)</Text>
+      <TextInput
+        value={String(overlayStyle.bgColorHex)}
+        onChangeText={(v)=>saveOverlayStyle({bgColorHex: v})}
+        autoCapitalize="none"
+        style={{borderWidth:1, borderColor:"#ddd", borderRadius:10, padding:10, marginTop:6}}
+      />
+
+      <Text style={{marginTop:12}}>Fon shaffofligi (0..255)</Text>
+      <TextInput
+        value={String(overlayStyle.bgAlpha)}
+        onChangeText={(v)=>saveOverlayStyle({bgAlpha: clampInt(v, 0, 255)})}
+        keyboardType="numeric"
+        style={{borderWidth:1, borderColor:"#ddd", borderRadius:10, padding:10, marginTop:6}}
+      />
+
+      <View style={{flexDirection:"row", gap:10, marginTop:16}}>
+        <TouchableOpacity onPress={()=>setShowOverlaySettings(false)} style={{flex:1, padding:12, borderRadius:12, backgroundColor:"#eee", alignItems:"center"}}>
+          <Text>Yopish</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={loadOverlayStyle} style={{flex:1, padding:12, borderRadius:12, backgroundColor:"#111", alignItems:"center"}}>
+          <Text style={{color:"#fff"}}>Qayta yuklash</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={{marginTop:10, color:"#666", fontSize:12}}>
+        Eslatma: Bu sozlamalar overlay matn ko'rinishini boshqaradi.
+      </Text>
+    </View>
+  </View>
+</Modal>
+
+);

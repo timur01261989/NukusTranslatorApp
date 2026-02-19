@@ -76,16 +76,28 @@ export async function translateSmart({
   backendUrl,
   accessToken,
 }) {
+  const preparedText =
+    sourceLang === "Karakalpak" ? applyKarakalpakHints(text) : text;
+
   // Prefer your backend+Gemini if configured, fallback to free provider so app works out of the box.
+  let out;
   if (backendUrl && backendUrl.trim().length > 0 && accessToken && accessToken.trim().length > 0) {
     try {
-      return await translateWithGemini({ text, sourceLang, targetLang, backendUrl, accessToken });
+      out = await translateWithGemini({ text: preparedText, sourceLang, targetLang, backendUrl, accessToken });
     } catch (e) {
       // fall through
       console.warn("Backend translation failed, falling back to MyMemory:", e?.message || e);
     }
   }
-  return await translateWithMyMemory(text, sourceLang, targetLang);
+  if (!out) {
+    out = await translateWithMyMemory(preparedText, sourceLang, targetLang);
+  }
+
+  if (targetLang === "Karakalpak") {
+    out = applyKarakalpakHints(out);
+  }
+  return out;
 }
+
 
 export { LANGUAGE_CODE_MAP };

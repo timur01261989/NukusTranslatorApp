@@ -116,4 +116,40 @@ class BridgeModule(private val reactContext: ReactApplicationContext) : ReactCon
             promise.reject("GET_KEY_ERR", e)
         }
     }
+
+@ReactMethod
+fun setOverlayStyle(textSizeSp: Double, textColorHex: String, bgColorHex: String, bgAlpha: Int, promise: Promise) {
+    try {
+        val ctx = reactApplicationContext
+        val textColor = parseColorSafe(textColorHex, android.graphics.Color.WHITE)
+        val bgColor = parseColorSafe(bgColorHex, 0x000000)
+        OverlayPrefs.setStyle(ctx, textSizeSp.toFloat(), textColor, bgColor, bgAlpha)
+        promise.resolve(true)
+    } catch (e: Exception) {
+        promise.reject("OVERLAY_STYLE_SET_ERR", e)
+    }
+}
+
+@ReactMethod
+fun getOverlayStyle(promise: Promise) {
+    try {
+        val ctx = reactApplicationContext
+        val map = Arguments.createMap()
+        map.putDouble("textSizeSp", OverlayPrefs.getTextSizeSp(ctx).toDouble())
+        map.putString("textColorHex", String.format("#%06X", 0xFFFFFF and OverlayPrefs.getTextColor(ctx)))
+        map.putString("bgColorHex", String.format("#%06X", 0xFFFFFF and OverlayPrefs.getBgColor(ctx)))
+        map.putInt("bgAlpha", OverlayPrefs.getBgAlpha(ctx))
+        promise.resolve(map)
+    } catch (e: Exception) {
+        promise.reject("OVERLAY_STYLE_GET_ERR", e)
+    }
+}
+
+private fun parseColorSafe(hex: String, fallback: Int): Int {
+    return try {
+        val h = hex.trim()
+        if (h.startsWith("#")) android.graphics.Color.parseColor(h) else android.graphics.Color.parseColor("#" + h)
+    } catch (_: Exception) { fallback }
+}
+
 }
